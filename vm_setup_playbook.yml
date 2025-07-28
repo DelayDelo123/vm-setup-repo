@@ -1,0 +1,48 @@
+---
+- name: Configure new VM with Docker and Jenkins
+  hosts: all
+  gather_facts: no # Нет необходимости собирать факты, так как скрипт все настраивает
+  become: yes      # Выполнять команды с привилегиями sudo (для запуска скрипта)
+
+  tasks:
+    - name: Ensure /tmp/vm_setup directory exists
+      ansible.builtin.file:
+        path: /tmp/vm_setup
+        state: directory
+        mode: '0755'
+
+    - name: Copy setup script to target VM
+      ansible.builtin.copy:
+        src: setup_vm.sh       # Имя вашего скрипта в том же репозитории
+        dest: /tmp/vm_setup/setup_vm.sh
+        mode: '0755'           # Делаем скрипт исполняемым
+
+    - name: Execute the setup script
+      ansible.builtin.command: /tmp/vm_setup/setup_vm.sh
+      args:
+        chdir: /tmp/vm_setup   # Выполняем скрипт из его каталога
+      register: script_output  # Сохраняем вывод скрипта
+      # Если скрипт перезагружает ВМ, эта задача может завершиться ошибкой,
+      # но ВМ продолжит настройку. Вам нужно будет повторно запустить задачу в AWX.
+
+    - name: Display script output
+      ansible.builtin.debug:
+        var: script_output.stdout_lines
+
+    - name: Display script errors (if any)
+      ansible.builtin.debug:
+        var: script_output.stderr_lines
+
+    - name: Wait for VM to come back online after potential reboot
+      ansible.builtin.wait_for_connection:
+        delay: 10 # Задержка перед первой попыткой
+        timeout: 300 # Максимальное время ожидания (5 минут)
+      delegate_to: localhost # Выполнить с контрольного узла AWX
+      when: "'sudo reboot' in script_output.stdout or 'sudo reboot' in script_output.stderr"
+      # Эта задача запустится, только если скрипт в консоли вывел "sudo reboot"
+      # и будет ждать, пока ВМ снова станет доступной для SSH.
+
+    - name: Remove temporary script directory (Optional, if script completes without reboot)
+      ansible.builtin.file:
+        path: /tmp/vm_setup
+        state: absent
