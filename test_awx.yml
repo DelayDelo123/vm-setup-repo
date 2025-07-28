@@ -1,0 +1,9 @@
+---
+- name: Test AWX Server Connectivity and Basic Ansible Functionality
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Print a simple message
+      ansible.builtin.debug:
+        msg: "Hello from AWX! Basic Ansible functionality is working."
